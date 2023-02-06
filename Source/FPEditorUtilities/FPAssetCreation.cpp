@@ -28,7 +28,7 @@ void UFPAssetCreation::CreateCharacter()
 {
 	if (!CharacterSkeleton)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s No character skeleton selected"), TEXT(__FUNCTION__));
+		UE_LOG(LogTemp, Warning, TEXT("No character skeleton selected"));
 		return;
 	}
 
