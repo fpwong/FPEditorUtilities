@@ -165,6 +165,11 @@ void FFPLoadDataURL_Base::HandleURLEntered(FString URL, TWeakObjectPtr<UObject> 
 
 void FFPLoadDataURL_Base::OpenWindow(TWeakObjectPtr<UObject> Object)
 {
+	if (!Object.IsValid())
+	{
+		return;
+	}
+
 	TSharedPtr<SEditableTextBox> TestBox;
 
 	FString DefaultURL;
