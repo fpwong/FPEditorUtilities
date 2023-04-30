@@ -11,7 +11,8 @@ TSharedRef<IHttpRequest> UFPGetGoogleSheets::RequestWithRoute(FString Subroute)
 {
 	Http = &FHttpModule::Get();
 	TSharedRef<IHttpRequest> Request = Http->CreateRequest();
-	Request->SetURL(UFPGetGoogleSheets::ApiBaseUrl + Subroute);
+	// Request->SetURL(UFPGetGoogleSheets::ApiBaseUrl + Subroute);
+	Request->SetURL(Subroute);
 	SetRequestHeaders(Request);
 	return Request;
 }
@@ -59,7 +60,8 @@ void UFPGetGoogleSheets::ProcessResponse(FHttpRequestPtr Request, FHttpResponseP
 
 void UFPGetGoogleSheets::SendRequest(FString DocId)
 {
-	TSharedRef<IHttpRequest> Request = GetRequest(FString::Printf(TEXT("%s/export?format=csv"), *DocId));
+	// TSharedRef<IHttpRequest> Request = GetRequest(FString::Printf(TEXT("%s/export?format=csv"), *DocId));
+	TSharedRef<IHttpRequest> Request = GetRequest(*DocId);
 	Request->OnProcessRequestComplete().BindUObject(this, &UFPGetGoogleSheets::ProcessResponse);
 	Request->ProcessRequest();
 }
