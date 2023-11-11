@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "EditorUtilityObject.h"
 #include "Animation/Skeleton.h"
-#include "Blutility/Classes/EditorUtilityObject.h"
 #include "Engine/EngineTypes.h"
 #include "FPAssetCreation.generated.h"
 
