@@ -49,7 +49,8 @@ public class FPEditorUtilities : ModuleRules
 				"CurveTableEditor",
 				"HTTP",
 				"ToolMenus",
-				"UnrealEd"
+				"UnrealEd",
+				"GameplayTags",
 			}
 		);
 
