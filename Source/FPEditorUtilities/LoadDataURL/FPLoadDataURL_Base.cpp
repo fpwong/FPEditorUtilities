@@ -213,7 +213,7 @@ void FFPLoadDataURL_Base::ImportFromGoogleSheets(TWeakObjectPtr<UObject> Object,
 	GetGoogleSheets->SendRequest(GoogleSheetsId);
 
 	//https://docs.google.com/spreadsheets/d/1IGLqj-ViOm8OdB9R8kl3Jg3TdvJ6F3-QOSX149eza4w/edit?usp=sharing
-	UE_LOG(LogTemp, Warning, TEXT("Importing from google sheets~"));
+	UE_LOG(LogTemp, Log, TEXT("Begin importing google sheets"));
 }
 
 // void FFPLoadDataURL_Base::ReceiveCSV(FString CSV, TWeakObjectPtr<UObject> Object)

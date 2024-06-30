@@ -17,15 +17,18 @@ void FFPLoadDataURL_DataTable::ReceiveCSV(FString CSV, TWeakObjectPtr<UObject> O
 {
 	if (!Object.IsValid())
 	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to import datatable: nullptr"));
 		return;
 	}
 
 	UDataTable* DataTable = Cast<UDataTable>(Object.Get());
 	if (!DataTable)
 	{
+		UE_LOG(LogTemp, Error, TEXT("Failed import data table: cast failed"));
 		return;
 	}
 
+	UE_LOG(LogTemp, Log, TEXT("Received CSV"));
 	DataTable->CreateTableFromCSVString(CSV);
 	FDataTableEditorUtils::BroadcastPostChange(DataTable, FDataTableEditorUtils::EDataTableChangeInfo::RowList);
 	GEditor->RedrawAllViewports();
