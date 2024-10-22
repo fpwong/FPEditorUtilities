@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 
+class FFPObjectTableAssetTypeActions;
+
 class FFPEditorUtilitiesModule final : public IModuleInterface
 {
 public:
@@ -10,4 +12,7 @@ public:
 	virtual void ShutdownModule() override;
 
 	void OnPostEngineInit();
+
+private:
+	TSharedPtr<FFPObjectTableAssetTypeActions> ObjectTableActions;
 };

@@ -1,8 +1,10 @@
-#include "FPEditorUtilities.h"
+#include "FPEditorUtilitiesModule.h"
 
+#include "AssetToolsModule.h"
 #include "GameplayTagsManager.h"
 #include "LoadDataURL/FPLoadDataURL_CurveTable.h"
 #include "LoadDataURL/FPLoadDataURL_DataTable.h"
+#include "ObjectTableEditor/FPObjectTableActions.h"
 
 #define LOCTEXT_NAMESPACE "FFPEditorUtilitiesModule"
 
@@ -10,11 +12,18 @@ void FFPEditorUtilitiesModule::StartupModule()
 {
 #if WITH_EDITOR
 	FCoreDelegates::OnPostEngineInit.AddRaw(this, &FFPEditorUtilitiesModule::OnPostEngineInit);
+
+	ObjectTableActions = MakeShared<FFPObjectTableAssetTypeActions>();
+	FAssetToolsModule::GetModule().Get().RegisterAssetTypeActions(ObjectTableActions.ToSharedRef());
 #endif
 }
 
 void FFPEditorUtilitiesModule::ShutdownModule()
 {
+	if (FModuleManager::Get().IsModuleLoaded("AssetTools") && ObjectTableActions.IsValid())
+	{
+		FAssetToolsModule::GetModule().Get().UnregisterAssetTypeActions(ObjectTableActions.ToSharedRef());
+	}
 }
 
 void FFPEditorUtilitiesModule::OnPostEngineInit()
