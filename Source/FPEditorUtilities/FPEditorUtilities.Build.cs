@@ -22,6 +22,7 @@ public class FPEditorUtilities : ModuleRules
 				"Slate",
 				"SlateCore",
 
+				"DeveloperSettings",
 				"GameplayAbilities",
 				"GameplayAbilitiesEditor",
 				"UnrealEd",
@@ -32,6 +33,7 @@ public class FPEditorUtilities : ModuleRules
 				"ToolMenus",
 				"UnrealEd",
 				"GameplayTags",
+				"GameplayTagsEditor",
 
 				// Object table
 				"WorkspaceMenuStructure",

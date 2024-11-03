@@ -22,6 +22,9 @@ public:
 	UPROPERTY(EditAnywhere)
 	FString Suffix;
 
+	UPROPERTY(EditAnywhere)
+	bool bCheckSubfolders;
+
 	void SetClassFilter(UClass* InClass)
 	{
 		Modify();

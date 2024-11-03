@@ -125,7 +125,7 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	TArray<FAssetData> AssetDataList;
 	auto RelativePath = TableSettings->RootDirectory.Path;
 	FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());
-	AssetRegistryModule.Get().GetAssetsByPath(FName(*TableSettings->RootDirectory.Path), AssetDataList);
+	AssetRegistryModule.Get().GetAssetsByPath(FName(*TableSettings->RootDirectory.Path), AssetDataList, TableSettings->bCheckSubfolders);
 
 	UE_LOG(LogTemp, Warning, TEXT("Searched %s %s"), *RelativePath, *TableSettings->RootDirectory.Path);
 	if (AssetDataList.Num() == 0)

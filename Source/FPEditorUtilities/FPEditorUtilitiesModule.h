@@ -13,6 +13,15 @@ public:
 
 	void OnPostEngineInit();
 
+	void CheckTagFiles();
+
+	void ReadTableFiles(UDataTable* Table);
+	void BindTables();
+
 private:
 	TSharedPtr<FFPObjectTableAssetTypeActions> ObjectTableActions;
+
+	FTimerHandle UpdateTimer;
+
+	TArray<TWeakObjectPtr<UDataTable>> BoundTables;
 };
