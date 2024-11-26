@@ -75,7 +75,7 @@ void FFPEditorUtilitiesModule::OnPostEngineInit()
 	}
 
 	// check tag files changed on a timer
-	GEditor->GetTimerManager()->SetTimer(UpdateTimer, FTimerDelegate::CreateRaw(this, &FFPEditorUtilitiesModule::CheckTagFiles), 1.0f, true);
+	GEditor->GetTimerManager()->SetTimer(UpdateTimer, FTimerDelegate::CreateRaw(this, &FFPEditorUtilitiesModule::CheckTagFiles), 2.0f, true);
 
 	BindTables();
 	UFPEditorUtilitySettings::GetMutable().OnTablesChanged.AddRaw(this, &FFPEditorUtilitiesModule::BindTables);
@@ -99,16 +99,19 @@ void FFPEditorUtilitiesModule::CheckTagFiles()
 		if (IFileManager::Get().FileExists(*TagFile))
 		{
 			const FDateTime FoundFileTime = IFileManager::Get().GetTimeStamp(*TagFile);
+
 			FTimespan Delta = FDateTime::UtcNow() - FoundFileTime;
-			if (Delta.GetSeconds() <= 1)
+
+			if (Delta.GetTotalSeconds() <= 3.f)
 			{
+				// UE_LOG(LogTemp, Warning, TEXT("%s, %s %d %f"), *FoundFileTime.ToString(), *FDateTime::UtcNow().ToString(), Delta.GetSeconds(), Delta.GetTotalSeconds());
 				GConfig->LoadFile(TagSource->GetConfigFileName());
 
 				FText Msg = FText::FromString(FString::Printf(TEXT("Reloaded %s"), *TagSource->GetConfigFileName()));
 				// UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
-				// FNotificationInfo Notification(Msg);
-				// Notification.ExpireDuration = 5.0f;
-				// FSlateNotificationManager::Get().AddNotification(Notification);
+				FNotificationInfo Notification(Msg);
+				Notification.ExpireDuration = 5.0f;
+				FSlateNotificationManager::Get().AddNotification(Notification);
 				bChanged = true;
 			}
 		}
