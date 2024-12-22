@@ -38,6 +38,7 @@ void FFPEditorUtilitiesModule::OnPostEngineInit()
 
 	UToolMenu* HelpMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
 	FToolMenuSection& Section = HelpMenu->AddSection("Reload Gameplay Tags", INVTEXT("ReloadGameplayTags"));
+	RegisterGameCategory();
 
 	FToolMenuOwnerScoped OwnerScoped(this);
 	{
@@ -180,6 +181,31 @@ void FFPEditorUtilitiesModule::BindTables()
 			Table->OnDataTableChanged().AddRaw(this, &FFPEditorUtilitiesModule::ReadTableFiles, Table);
 			BoundTables.Add(Table);
 		}
+	}
+}
+
+void FFPEditorUtilitiesModule::RegisterGameCategory()
+{
+	FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+
+	FString ProjName = FString(FApp::GetProjectName());
+	static const FString Prefix = FString::Printf(TEXT("/Script/%s"), *ProjName);
+
+	for (const auto* const Class : TObjectRange<UClass>())
+	{
+		if (!Class->GetClassPathName().ToString().StartsWith(Prefix)) 
+		{ 
+			continue; 
+		}
+
+		const TSharedRef<FPropertySection> Section = PropertyModule.FindOrCreateSection(
+			Class->GetFName(),
+			TEXT("MyProject"),
+			INVTEXT("🍩Project")
+		);
+
+		Section->AddCategory(TEXT("Default"));
+		Section->AddCategory(Class->GetFName());
 	}
 }
 

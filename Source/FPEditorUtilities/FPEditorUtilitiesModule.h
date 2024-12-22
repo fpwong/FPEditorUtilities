@@ -18,6 +18,8 @@ public:
 	void ReadTableFiles(UDataTable* Table);
 	void BindTables();
 
+	void RegisterGameCategory();
+
 private:
 	TSharedPtr<FFPObjectTableAssetTypeActions> ObjectTableActions;
 
