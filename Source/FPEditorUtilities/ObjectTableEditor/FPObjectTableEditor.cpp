@@ -18,6 +18,7 @@
 #include "ObjectTools.h"
 #include "ActorFactories/ActorFactory.h"
 #include "Factories/DataAssetFactory.h"
+#include "Widgets/Text/SInlineEditableTextBlock.h"
 
 void SFPObjectTableRow::Construct(const FArguments& InArgs, TSharedPtr<FFPObjectData> InReference, const TSharedRef<STableViewBase>& OwnerTable)
 {
@@ -40,9 +41,11 @@ TSharedRef<SWidget> SFPObjectTableRow::GenerateWidgetForColumn(const FName& Colu
 		UObject* Obj = Reference->Object.Get();
 		if (ColumnName == TEXT("___FPRowName"))
 		{
-			ColumnWidget = SNew(STextBlock).Text(FText::Format(INVTEXT("{0}"), FText::FromString(GetNameSafe(Obj))));
+			ColumnWidget = SAssignNew(InlineEditableText, SInlineEditableTextBlock)
+				.IsReadOnly(false)
+				.Text(this, &SFPObjectTableRow::GetObjectName)
+				.OnTextCommitted(this, &SFPObjectTableRow::HandleRename);
 		}
-
 		// else if (ColumnName == TEXT("Value"))
 		// {
 		// 	for (TFieldIterator<FProperty> PropertyIt(Obj->GetClass()); PropertyIt; ++PropertyIt)
@@ -79,9 +82,55 @@ TSharedRef<SWidget> SFPObjectTableRow::GenerateWidgetForColumn(const FName& Colu
 			];
 }
 
-// void SMyObjectTable::Construct(const FArguments& InArgs)
-// {
-// }
+void SFPObjectTableRow::HandleRename(const FText& Text, ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod == ETextCommit::Type::OnEnter)
+	{
+		if (Reference->Object.IsValid())
+		{
+			FString NewName = Text.ToString();
+			FString Path = FPaths::GetPath(Reference->Object->GetPackage()->GetPathName()); 
+
+			// const FString NewPath = GetRenamedBlueprintPath(Blueprint, CommittedText.ToString());
+			// FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+			// TArray<FAssetRenameData> AssetToRename = { FAssetRenameData(Blueprint, NewPath) };
+
+			FAssetRenameData RenameData(Reference->Object.Get(), Path, NewName);
+
+			IAssetTools::Get().RenameAssets({RenameData});
+
+			// TSet<UPackage*> ObjectsUserRefusedToFullyLoad;
+			// FText ErrorMessage;
+			// ObjectTools::RenameSingleObject(Reference->Object.Get(), PGN, )
+        
+			// FString Path = Target->Owner->GetOutermost()->GetName() + TEXT("_sharedassets");
+			// bool bSucceed = ObjectTools::RenameObjects(Objects, false, TEXT(""), Path);
+			// if (bSucceed)
+			// 
+			// 
+			// if (ObjectTools::RenameSingleObject(Reference->Object.Get(), PGN, ObjectsUserRefusedToFullyLoad, ErrorMessage, nullptr, bLeaveRedirector))
+		}
+	}
+}
+
+FText SFPObjectTableRow::GetObjectName() const
+{
+	if (Reference->Object.IsValid())
+	{
+		return FText::FromString(GetNameSafe(Reference->Object.Get()));
+	}
+
+	return INVTEXT("ERROR: Invalid Object");
+}
+
+FReply SFPObjectTableRow::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InlineEditableText->IsHovered())
+	{
+		InlineEditableText->EnterEditingMode();
+	}
+	return FReply::Handled();
+}
 
 void SFPObjectTableListView::Construct(const FArguments& InArgs)
 {
@@ -254,6 +303,17 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
+					SNew(SButton).OnClicked_Lambda([this]()
+					{
+						RefreshTable();
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock).Text(INVTEXT("Refresh"))
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
 					SNew(SButton).OnClicked_Lambda([this]() {
 						UE_LOG(LogTemp, Warning, TEXT("Chosen class %s"), *TableSettings->ClassFilter->GetName());
 
@@ -280,6 +340,11 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 						{
 							FString DefaultName = TableSettings->ClassFilter->GetName();
 							DefaultName.RemoveFromEnd(TEXT("_C"));
+
+							if (!TableSettings->NameTemplate.IsEmpty())
+							{
+								DefaultName = TableSettings->NameTemplate; 
+							}
 
 							FString PackageName;
 							FString UniqueName;
@@ -335,10 +400,10 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 			// [
 			// 	PropertyEditorModule.CreatePropertyTableWidget(TextureAnalyzerTable.ToSharedRef())
 			// ]
-			+ SVerticalBox::Slot()
+			+ SVerticalBox::Slot().Padding(12)
 			[
 				SNew(SScrollBox).Orientation(Orient_Horizontal)
-				+ SScrollBox::Slot()
+				+ SScrollBox::Slot().FillSize(1.0)
 				[
 					ObjectTable.ToSharedRef()
 				]
@@ -450,6 +515,33 @@ void SFPObjectTableEditor::OnSelectionChanged(TSharedPtr<FFPObjectData> ObjectDa
 
 void SFPObjectTableEditor::RefreshTable()
 {
-	UE_LOG(LogTemp, Warning, TEXT("Refresh table?"));
 	ObjectTable->Refresh(TableSettings);
+}
+
+FReply SFPObjectTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	TArray<TSharedPtr<FFPObjectData>> SelectedItems = ObjectTable->GetSelectedItems();
+	if (SelectedItems.Num() == 1)
+	{
+		TSharedPtr<FFPObjectData> SelectedItem = SelectedItems[0];
+		if (SelectedItem->Object.IsValid())
+		{
+			if (InKeyEvent.GetKey() == EKeys::F2)
+			{
+				TSharedPtr<SFPObjectTableRow> Row = StaticCastSharedPtr<SFPObjectTableRow>(ObjectTable->WidgetFromItem(SelectedItem));
+				Row->InlineEditableText->EnterEditingMode();
+				return FReply::Handled();
+			}
+
+			if (InKeyEvent.GetKey() == EKeys::B && FSlateApplication::Get().GetModifierKeys().IsControlDown())
+			{
+				// Highlight the asset in content browser
+				const TArray<UObject*>& Assets = { SelectedItem->Object.Get() };
+				const FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+				ContentBrowserModule.Get().SyncBrowserToAssets(Assets);
+			}
+		}
+	}
+
+	return FReply::Unhandled();
 }

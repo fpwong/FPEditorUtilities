@@ -26,7 +26,13 @@ public:
 
 	virtual TSharedRef<SWidget> GenerateWidgetForColumn(const FName& ColumnName) override;
 
-private:
+	void HandleRename(const FText& Text, ETextCommit::Type CommitMethod);
+
+	FText GetObjectName() const;
+
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+
+	TSharedPtr<SInlineEditableTextBlock> InlineEditableText;
 	TSharedPtr<FFPObjectData> Reference;
 };
 
@@ -71,8 +77,8 @@ public:
 	virtual ~SFPObjectTableEditor() override;
 
 	static TSharedRef<SDockTab> CreateTab(const FSpawnTabArgs& Args);
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
-	TSharedPtr<SVerticalBox> Rows;
 	void OnPathSet(const FString& Path);
 
 	TSharedPtr<IPropertyTable> NewPropertyTable;

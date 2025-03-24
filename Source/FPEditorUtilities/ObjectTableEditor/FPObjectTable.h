@@ -20,7 +20,7 @@ public:
 	FDirectoryPath RootDirectory;
 
 	UPROPERTY(EditAnywhere)
-	FString Suffix;
+	FString NameTemplate;
 
 	UPROPERTY(EditAnywhere)
 	bool bCheckSubfolders;
