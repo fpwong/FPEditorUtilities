@@ -28,7 +28,7 @@ class FPEDITORUTILITIES_API UFPAssetCreation : public UEditorUtilityObject
 	FString CharacterName;
 
 	UPROPERTY(EditAnywhere)
-	USkeletalMesh* CharacterSkeleton;
+	TObjectPtr<USkeletalMesh> CharacterSkeleton;
 
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<AActor> CharacterClass;

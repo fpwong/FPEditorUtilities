@@ -150,10 +150,7 @@ void FFPLoadDataURL_Base::HandleURLEntered(FString URL, TWeakObjectPtr<UObject> 
 
 		if (UPackage* AssetPackage = Object->GetPackage())
 		{
-			if (UMetaData* TableMetaData = AssetPackage->GetMetaData())
-			{
-				TableMetaData->SetValue(Table, NAME_URL_SOURCE, *GoogleSheetId);
-			}
+			AssetPackage->GetMetaData().SetValue(Table, NAME_URL_SOURCE, *GoogleSheetId);
 		}
 
 		ImportFromGoogleSheets(Object, GoogleSheetId);
@@ -175,13 +172,7 @@ void FFPLoadDataURL_Base::OpenWindow(TWeakObjectPtr<UObject> Object)
 	FString DefaultURL;
 	if (UPackage* AssetPackage = Object->GetPackage())
 	{
-		if (AssetPackage->HasMetaData())
-		{
-			if (UMetaData* TableMetaData = AssetPackage->GetMetaData())
-			{
-				DefaultURL = TableMetaData->GetValue(Object.Get(), NAME_URL_SOURCE);
-			}
-		}
+		DefaultURL = AssetPackage->GetMetaData().GetValue(Object.Get(), NAME_URL_SOURCE);
 	}
 
 	TSharedRef<SWindow> Window = SNew(SWindow)

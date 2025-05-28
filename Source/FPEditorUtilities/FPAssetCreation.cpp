@@ -15,6 +15,7 @@
 #include "GameFramework/Character.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Animation/AnimBlueprint.h"
+#include "UObject/SavePackage.h"
 
 UFPAssetCreation::UFPAssetCreation()
 {
@@ -280,5 +281,9 @@ void UFPAssetCreation::SaveAsset(UObject* CreatedAsset)
 	UPackage* const Package = CreatedAsset->GetOutermost();
 	FString const PackageName = Package->GetName();
 	FString const PackageFileName = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
-	UPackage::SavePackage(Package, nullptr, RF_Standalone, *PackageFileName, GError, nullptr, false, true, SAVE_NoError);
+
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Standalone;
+	SaveArgs.Error = GError;
+	UPackage::SavePackage(Package, nullptr, *PackageFileName, SaveArgs);
 }

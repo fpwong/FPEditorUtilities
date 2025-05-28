@@ -14,7 +14,7 @@ public:
 	UFPObjectTable();
 
 	UPROPERTY(EditAnywhere)
-	UClass* ClassFilter;
+	TObjectPtr<UClass> ClassFilter;
 
 	UPROPERTY(EditAnywhere, meta = (RelativeToGameContentDir, LongPackageName))
 	FDirectoryPath RootDirectory;
