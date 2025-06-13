@@ -6,7 +6,7 @@
 #include "Runtime/Online/HTTP/Public/Http.h"
 #include "FPGetGoogleSheet.generated.h"
 
-DECLARE_DELEGATE_OneParam(OnResponse, FString);
+DECLARE_DELEGATE_ThreeParams(OnResponse, FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
 
 UCLASS()
 class FPEDITORUTILITIES_API UFPGetGoogleSheets : public UObject

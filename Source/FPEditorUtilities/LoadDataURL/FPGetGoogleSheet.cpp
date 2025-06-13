@@ -53,9 +53,7 @@ bool UFPGetGoogleSheets::ResponseIsValid(FHttpResponsePtr Response, bool bWasSuc
 
 void UFPGetGoogleSheets::ProcessResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
 {
-	if (!ResponseIsValid(Response, bWasSuccessful)) return;
-
-	OnResponseDelegate.ExecuteIfBound(Response->GetContentAsString());
+	OnResponseDelegate.ExecuteIfBound(Request, Response, bWasSuccessful);
 }
 
 void UFPGetGoogleSheets::SendRequest(FString DocId)
