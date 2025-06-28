@@ -13,7 +13,7 @@ class FPEDITORUTILITIES_API UFPObjectTable : public UObject
 public:
 	UFPObjectTable();
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, meta=(AllowAbstract))
 	TObjectPtr<UClass> ClassFilter;
 
 	UPROPERTY(EditAnywhere, meta = (RelativeToGameContentDir, LongPackageName))
@@ -24,6 +24,15 @@ public:
 
 	UPROPERTY(EditAnywhere)
 	bool bCheckSubfolders;
+
+	UPROPERTY()
+	TArray<FString> CheckedProperties;
+
+	UPROPERTY()
+	TArray<FString> DetailsViewSections;
+
+	UPROPERTY()
+	TArray<FString> CheckedCategories;
 
 	void SetClassFilter(UClass* InClass)
 	{
@@ -41,6 +50,7 @@ public:
 	void Refresh() { OnChange.Broadcast(); }
 
 	FSimpleMulticastDelegate OnChange;
+	FSimpleMulticastDelegate OnClassChanged;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;

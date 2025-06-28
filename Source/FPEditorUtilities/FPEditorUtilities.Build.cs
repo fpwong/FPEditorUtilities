@@ -40,6 +40,9 @@ public class FPEditorUtilities : ModuleRules
 				"EditorScriptingUtilities",
 				"EditorWidgets",
 				"InputCore",
+				"EditorWidgets",
+				"ToolWidgets",
+				"AssetRegistry"
 			});
 	}
 }

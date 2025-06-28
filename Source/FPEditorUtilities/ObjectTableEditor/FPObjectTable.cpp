@@ -11,6 +11,12 @@ UFPObjectTable::UFPObjectTable()
 void UFPObjectTable::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	UObject::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UFPObjectTable, ClassFilter))
+	{
+		OnClassChanged.Broadcast();
+	}
+
 	OnChange.Broadcast();
 }
 #endif
