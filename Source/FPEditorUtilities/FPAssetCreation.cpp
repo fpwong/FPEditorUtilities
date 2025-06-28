@@ -119,7 +119,7 @@ bool UFPAssetCreation::SelectDestinationFolder()
 void UFPAssetCreation::CreateMontage(FAssetToolsModule& AssetToolsModule, FString Suffix)
 {
 	UAnimMontageFactory* Factory = NewObject<UAnimMontageFactory>();
-	Factory->TargetSkeleton = CharacterSkeleton->Skeleton;
+	Factory->TargetSkeleton = CharacterSkeleton->GetSkeleton();
 
 	FString Name = FString::Printf(TEXT("Montage_%s_%s"), *CharacterName, *Suffix);
 	UObject* CreatedAsset = AssetToolsModule.Get().CreateAsset(Name, DestinationFolder, Factory->SupportedClass, Factory);
@@ -160,7 +160,7 @@ void UFPAssetCreation::CreateCharacter(FAssetToolsModule& AssetToolsModule)
 void UFPAssetCreation::CreateAnimBP(FAssetToolsModule& AssetToolsModule)
 {
 	UAnimBlueprintFactory* Factory = NewObject<UAnimBlueprintFactory>();
-	Factory->TargetSkeleton = CharacterSkeleton->Skeleton;
+	Factory->TargetSkeleton = CharacterSkeleton->GetSkeleton();
 	Factory->ParentClass = AnimInstanceClass;
 
 	FString Name = FString::Printf(TEXT("ABP_%s"), *CharacterName);
@@ -176,7 +176,7 @@ void UFPAssetCreation::CreateAnimBP(FAssetToolsModule& AssetToolsModule)
 void UFPAssetCreation::CreateBlendspace(FAssetToolsModule& AssetToolsModule)
 {
 	UBlendSpaceFactory1D* Factory = NewObject<UBlendSpaceFactory1D>();
-	Factory->TargetSkeleton = CharacterSkeleton->Skeleton;
+	Factory->TargetSkeleton = CharacterSkeleton->GetSkeleton();
 
 	FString Name = FString::Printf(TEXT("BS_%s_Walk"), *CharacterName);
 	UObject* CreatedAsset = AssetToolsModule.Get().CreateAsset(Name, DestinationFolder, Factory->SupportedClass, Factory);
@@ -269,7 +269,7 @@ void UFPAssetCreation::EditCharacterBlueprint(UObject* CreatedAsset)
 
 			if (CreatedAnimBlueprint)
 			{
-				Character->GetMesh()->SetAnimClass(CreatedAnimBlueprint->GeneratedClass.Get());
+				Character->GetMesh()->SetAnimInstanceClass(CreatedAnimBlueprint->GeneratedClass.Get());
 			}
 			UE_LOG(LogTemp, Warning, TEXT("Set character skeleton"));
 		}
