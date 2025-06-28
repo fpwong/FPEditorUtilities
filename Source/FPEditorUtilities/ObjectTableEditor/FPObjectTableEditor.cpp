@@ -12,6 +12,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "ObjectTools.h"
 #include "AssetRegistry/AssetRegistryHelpers.h"
+#include "Compression/lz4.h"
 #include "Editor/PropertyEditor/Private/PropertyNode.h"
 #include "Factories/BlueprintFactory.h"
 #include "Factories/DataAssetFactory.h"
@@ -120,10 +121,6 @@ void SFPObjectTableListView::Construct(const FArguments& InArgs, UFPObjectTable*
 
 	SAssignNew(HeaderRowWidget, SHeaderRow);
 
-	FCoreUObjectDelegates::OnObjectRenamed.AddRaw(this, &SFPObjectTableListView::HandleObjRenamed);
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-
 	SListView::Construct
 	(
 		SListView::FArguments()
@@ -135,7 +132,7 @@ void SFPObjectTableListView::Construct(const FArguments& InArgs, UFPObjectTable*
 
 void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 {
-	AssetDataList.Empty();
+	Rows.Empty();
 	if (!TableSettings->ClassFilter)
 	{
 		return;
@@ -167,7 +164,6 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 
 	FString RelativePath = TableSettings->RootDirectory.Path;
 	FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());
-	// AssetRegistryModule.Get().GetAssetsByPath(FName(*TableSettings->RootDirectory.Path), AssetDataList, TableSettings->bCheckSubfolders);
 
 	FARFilter Filter;
 	if (!TableSettings->RootDirectory.Path.IsEmpty())
@@ -182,6 +178,7 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
 	bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
 
+	TArray<FAssetData> AssetDataList;
 	if (bIsBlueprint && !bIsDataAsset)
 	{
 		UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
@@ -197,7 +194,6 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 		UE_LOG(LogTemp, Warning, TEXT("Found no matching assets empty!"));
 	}
 
-	Rows.Empty();
 	for (FAssetData DataList : AssetDataList)
 	{
 		TSharedPtr<FFPObjectData> NewRow = MakeShared<FFPObjectData>();
@@ -213,6 +209,60 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	{
 		return A->AssetData.AssetName.ToString() < B->AssetData.AssetName.ToString();
 	});
+
+	RequestListRefresh();
+}
+
+void SFPObjectTableListView::AddAsset(const FAssetData& AssetData)
+{
+	// don't add if it's already in the table
+	for (int i = Rows.Num() - 1; i >= 0; --i)
+	{
+		if (Rows[i]->AssetData == AssetData)
+		{
+			return;
+		}
+	}
+
+	TSharedPtr<FFPObjectData> NewRow = MakeShared<FFPObjectData>();
+	NewRow->AssetData = AssetData;
+	Rows.Add(NewRow);
+
+	Rows.StableSort([](TSharedPtr<FFPObjectData> A, TSharedPtr<FFPObjectData> B)
+	{
+		return A->AssetData.AssetName.ToString() < B->AssetData.AssetName.ToString();
+	});
+
+	UE_LOG(LogTemp, Warning, TEXT("Added %s"), *AssetData.AssetName.ToString());
+	RequestListRefresh();
+}
+
+void SFPObjectTableListView::RemoveAsset(const FAssetData& AssetData)
+{
+	for (int i = Rows.Num() - 1; i >= 0; --i)
+	{
+		if (Rows[i]->AssetData == AssetData)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Removed %s"), *AssetData.AssetName.ToString());
+			Rows.RemoveAt(i);
+			return;
+		}
+	}
+
+	RequestListRefresh();
+}
+
+void SFPObjectTableListView::RenameAsset(const FAssetData& Asset, const FString& OldPath)
+{
+	UE_LOG(LogTemp, Warning, TEXT("Renamed %s PREV %s"), *Asset.AssetName.ToString(), *OldPath);
+	for (int i = Rows.Num() - 1; i >= 0; --i)
+	{
+		if (Rows[i]->AssetData.GetSoftObjectPath().ToString() == OldPath)
+		{
+			Rows[i]->AssetData = Asset;
+			return;
+		}
+	}
 
 	RequestListRefresh();
 }
@@ -244,17 +294,6 @@ TSharedRef<ITableRow> SFPObjectTableListView::OnGenerateRow(TSharedPtr<FFPObject
 {
 	// UE_LOG(LogTemp, Warning, TEXT("Generate row %s"), *GetNameSafe(InDisplayNode->GetObj()));
 	return SNew(SFPObjectTableRow, InDisplayNode, OwnerTable);
-}
-
-void SFPObjectTableListView::HandleObjRenamed(UObject* Object, UObject* OldOuter, FName OldName)
-{
-	for (FAssetData& Asset : AssetDataList)
-	{
-		if (Asset.AssetName == OldName)
-		{
-			Refresh(ObjectTable);
-		}
-	}
 }
 
 void SFPToggleButtons::Construct(const FArguments& InArgs)
@@ -384,11 +423,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 	AssetRegistryModule.Get().OnAssetAdded().AddRaw(this, &SFPObjectTableEditor::HandleAssetAdded);
 	AssetRegistryModule.Get().OnAssetRenamed().AddRaw(this, &SFPObjectTableEditor::HandleAssetRenamed);
 
-	FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-
-	FPathPickerConfig PathPickerConfig;
-	PathPickerConfig.OnPathSelected = FOnPathSelected::CreateRaw(this, &SFPObjectTableEditor::OnPathSet);
-
 	FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	NewPropertyTable = PropertyEditorModule.CreatePropertyTable();
 	NewPropertyTable->SetIsUserAllowedToChangeRoot(false);
@@ -448,7 +482,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 		for (TFieldIterator<FProperty> It(TableSettings->ClassFilter.Get()); It; ++It)
 		{
 			FProperty* Property = *It;
-			UE_LOG(LogTemp, Warning, TEXT("TEST %s"), *Property->GetName());
 
 			AllProperties.Add(Property->GetName());
 
@@ -458,7 +491,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 				CategoryNamesMetaData->ParseIntoArray(CategoryNames, TEXT(","), true);
 				for (int i = 0; i < CategoryNames.Num(); i++)
 				{
-					// UE_LOG(LogTemp, Warning, TEXT("\tCATEGORY %s"), *CategoryNames[i]);
 					ClassProperties.Add(CategoryNames[i]);
 				}
 			}
@@ -622,56 +654,6 @@ TSharedRef<SDockTab> SFPObjectTableEditor::CreateTab(const FSpawnTabArgs& Args)
 		];
 }
 
-void SFPObjectTableEditor::OnPathSet(const FString& Path)
-{
-	// TableSettings->SetRootDirectory(FDirectoryPath(Path));
-
-	if (false)
-	{
-		// FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-		//
-		// FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-		//
-		// TArray<FAssetData> AssetDataList;
-		// AssetRegistryModule.Get().GetAssetsByPath(FName(*Path), AssetDataList);
-		//
-		// FSinglePropertyParams Params;
-		// FPropertyEditorModule& EditModule = FModuleManager::Get().GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-		//
-		// TArray<UObject*> Objects;
-		// Rows->ClearChildren();
-		//
-		// SNew(SListView<TSharedPtr<FMyObjectData>>).OnSelectionChanged(this, &SMyObjectTableEditor::OnSelectionChanged);
-		//
-		// // SFPObjectTableEditor::FOnSelectionChanged
-		// ObjectTable = SNew(SMyObjectTable, Path, TableSettings->ClassFilter);
-		// ObjectTable->MyOnSelectionChanged().BindRaw(this, &SMyObjectTableEditor::OnSelectionChanged);
-		// Rows->AddSlot().AttachWidget(ObjectTable.ToSharedRef());
-	}
-
-	// for (FAssetData DataList : AssetDataList)
-	// {
-	// 	TSharedRef<SHorizontalBox> HBox = SNew(SHorizontalBox);
-	//
-	// 	if (UObject* Asset = DataList.GetAsset())
-	// 	{
-	// 		for (TFieldIterator<FProperty> PropertyIt(Asset->GetClass()); PropertyIt; ++PropertyIt)
-	// 		{
-	// 			TSharedPtr<ISinglePropertyView> Test = EditModule.CreateSingleProperty(Asset, PropertyIt->GetFName(), Params);
-	//
-	// 			// HBox->AddSlot().AutoWidth().AttachWidget(SNew(STextBlock).Text(FText::FromString(*DataList.AssetName.ToString())));
-	// 			HBox->AddSlot().AutoWidth().AttachWidget(Test.ToSharedRef());
-	// 		}
-	//
-	// 		Objects.Add(Asset);
-	// 	}
-	//
-	// 	Rows->AddSlot().AutoHeight().AttachWidget(HBox);
-	// }
-	//
-	// TextureAnalyzerTable->SetObjects(Objects);
-}
-
 void SFPObjectTableEditor::OnSelectionChanged(TSharedPtr<FFPObjectData> ObjectData, ESelectInfo::Type SelectInfo)
 {
 	if (ObjectTable.IsValid() && DetailsView.IsValid())
@@ -692,19 +674,19 @@ FReply SFPObjectTableEditor::HandleNewClassClicked()
 
 	UClass* ClassToUse = TableSettings->ClassFilter;
 
-	if (auto BP = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter))
+	if (TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass()))
+	{
+		auto Factory = NewObject<UDataAssetFactory>();
+		Factory->DataAssetClass = TableSettings->ClassFilter;
+		FoundFactory = Factory;
+	}
+	else if (auto BP = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter))
 	{
 		UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
 		Factory->ParentClass = BP->GeneratedClass;
 
 		FoundFactory = Factory;
 		ClassToUse = Factory->ParentClass;
-	}
-	else if (TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass()))
-	{
-		auto Factory = NewObject<UDataAssetFactory>();
-		Factory->DataAssetClass = TableSettings->ClassFilter;
-		FoundFactory = Factory;
 	}
 
 	if (!FoundFactory)
@@ -735,7 +717,7 @@ FReply SFPObjectTableEditor::HandleNewClassClicked()
 		AssetToolsModule.Get().CreateUniqueAssetName(TableSettings->RootDirectory.Path / DefaultName, "", PackageName, UniqueName);
 		UE_LOG(LogTemp, Warning, TEXT("Checking %s"), *(TableSettings->RootDirectory.Path / TableSettings->GetClass()->GetName()));
 		CreatedAsset = AssetToolsModule.Get().CreateAsset(UniqueName, TableSettings->RootDirectory.Path, FoundFactory->SupportedClass, FoundFactory);
-		RefreshTable();
+		// RefreshTable();
 	}
 	else
 	{
@@ -754,51 +736,15 @@ FReply SFPObjectTableEditor::HandleDeleteClicked()
 {
 	if (ObjectTable.IsValid())
 	{
-		if (ObjectTools::DeleteObjects(ObjectTable->GetSelectedObjects()))
-		{
-			RefreshTable();
-		}
+		AssetViewUtils::DeleteAssets(ObjectTable->GetSelectedObjects());
 	}
 	return FReply::Handled();
 }
 
 FReply SFPObjectTableEditor::HandleDuplicateClicked()
 {
-
-	// TArray<UObject*> SelectedObjs = ObjectTable->GetSelectedObjects();
-	// if (SelectedObjs.Num() > 0)
-	// {
-	// 	// FString DefaultName = TableSettings->ClassFilter->GetName();
-	// 	// DefaultName.RemoveFromEnd(TEXT("_C"));
-	// 	//
-	// 	// if (!TableSettings->NameTemplate.IsEmpty())
-	// 	// {
-	// 	// 	DefaultName = TableSettings->NameTemplate;
-	// 	// }
-	//
-	// 	// FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>(FName("AssetTools"));
-	// 	// FString PackageName;
-	// 	// FString UniqueName;
-	// 	// AssetToolsModule.Get().CreateUniqueAssetName(TableSettings->RootDirectory.Path / DefaultName, "", PackageName, UniqueName);
-	// 	// // UE_LOG(LogTemp, Warning, TEXT("Checking %s"), *(TableSettings->RootDirectory.Path / TableSettings->GetClass()->GetName()));
-	// 	// AssetViewUtils::CopyAssets(SelectedObjs, TableSettings->RootDirectory.Path);
-	//
-	// 	for (UObject* Obj : SelectedObjs)
-	// 	{
-	//
-	// 		UE_LOG(LogTemp, Warning, TEXT("Try dup asset %s"), *Obj->GetName())
-	// 		IAssetTools::Get().DuplicateAsset(Obj->GetName(), TableSettings->RootDirectory.Path, Obj);
-	// 	}
-	// }
-
 	for (TSharedPtr<FFPObjectData> Item : ObjectTable->GetSelectedItems())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Dupe %s"), *Item->AssetData.AssetName.ToString());
-
-		// FString PackageName;
-		// FString UniqueName;
-		// AssetToolsModule.Get().CreateUniqueAssetName(TableSettings->RootDirectory.Path / DefaultName, "", PackageName, UniqueName);
-		// IAssetTools::Get().DuplicateAsset(Item->AssetData.AssetName.ToString(), TableSettings->RootDirectory.Path, Item->AssetData.GetAsset());
 		AssetViewUtils::CopyAssets({Item->AssetData.GetAsset()}, TableSettings->RootDirectory.Path);
 		RefreshTable();
 	}
@@ -806,16 +752,15 @@ FReply SFPObjectTableEditor::HandleDuplicateClicked()
 	return FReply::Handled();
 }
 
-void SFPObjectTableEditor::HandleAssetRenamed(const FAssetData& Asset, const FString& NewName)
+void SFPObjectTableEditor::HandleAssetRenamed(const FAssetData& Asset, const FString& OldPath)
 {
-	if (ObjectTable->AssetDataList.Contains(Asset))
-	{
-		RefreshTable();
-	}
+	ObjectTable->RenameAsset(Asset, OldPath);
 }
 
 void SFPObjectTableEditor::HandleAssetAdded(const FAssetData& Asset)
 {
+	IAssetRegistry& AssetRegistry = IAssetRegistry::GetChecked();
+
 	FARFilter Filter;
 	if (!TableSettings->RootDirectory.Path.IsEmpty())
 	{
@@ -826,21 +771,59 @@ void SFPObjectTableEditor::HandleAssetAdded(const FAssetData& Asset)
 	Filter.ClassPaths.Add(TableSettings->ClassFilter->GetClassPathName());
 	Filter.bRecursiveClasses = true;
 
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	FARCompiledFilter CompiledFilter;
-	AssetRegistryModule.Get().CompileFilter(Filter, CompiledFilter);
-	if (AssetRegistryModule.Get().IsAssetIncludedByFilter(Asset, CompiledFilter))
+	bool bShouldAdd = false;
+
+	bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
+	bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
+	if (bIsBlueprint && !bIsDataAsset)
 	{
-		RefreshTable();
+		// Expand list of classes to include derived classes
+		TArray<FTopLevelAssetPath> BlueprintParentClassPathRoots = MoveTemp(Filter.ClassPaths);
+		TSet<FTopLevelAssetPath> BlueprintParentClassPaths;
+		if (Filter.bRecursiveClasses)
+		{
+			AssetRegistry.GetDerivedClassNames(
+				BlueprintParentClassPathRoots, 
+				TSet<FTopLevelAssetPath>(),
+				 BlueprintParentClassPaths
+				 );
+		}
+		else
+		{
+			BlueprintParentClassPaths.Append(BlueprintParentClassPathRoots);
+		}
+
+		// Search for all blueprints and then check BlueprintParentClassPaths in the results
+		Filter.ClassPaths.Reset(1);
+		Filter.ClassPaths.Add(FTopLevelAssetPath(FName(TEXT("/Script/Engine")), FName(TEXT("BlueprintCore"))));
+		Filter.bRecursiveClasses = true;
+
+		// Verify blueprint class
+		if (BlueprintParentClassPaths.IsEmpty() || UAssetRegistryHelpers::IsAssetDataBlueprintOfClassSet(Asset, BlueprintParentClassPaths))
+		{
+			bShouldAdd = true;
+		}
+	}
+	else
+	{
+		FARCompiledFilter CompiledFilter;
+		AssetRegistry.CompileFilter(Filter, CompiledFilter);
+
+		if (AssetRegistry.IsAssetIncludedByFilter(Asset, CompiledFilter))
+		{
+			bShouldAdd = true;
+		}
+	}
+
+	if (bShouldAdd)
+	{
+		ObjectTable->AddAsset(Asset);
 	}
 }
 
 void SFPObjectTableEditor::HandleAssetRemoved(const FAssetData& Asset)
 {
-	if (ObjectTable->AssetDataList.Contains(Asset))
-	{
-		RefreshTable();
-	}
+	ObjectTable->RemoveAsset(Asset);
 }
 
 void SFPObjectTableEditor::RefreshTable()

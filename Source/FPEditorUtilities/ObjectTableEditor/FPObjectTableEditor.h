@@ -54,13 +54,14 @@ public:
 	void Construct(const FArguments& InArgs, UFPObjectTable* InTableSettings);
 
 	void Refresh(UFPObjectTable* TableSettings);
+	void AddAsset(const FAssetData& AssetData);
+	void RemoveAsset(const FAssetData& AssetData);
+	void RenameAsset(const FAssetData& Asset, const FString& NewName);
 
 	TArray<UObject*> GetSelectedObjects();
 	TArray<FAssetData> GetSelectedAssets();
 
 	FOnSelectionChanged& MyOnSelectionChanged() { return OnSelectionChanged; }
-
-	TArray<FAssetData> AssetDataList;
 
 protected:
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FFPObjectData> InDisplayNode, const TSharedRef<STableViewBase>& OwnerTable);
@@ -70,8 +71,6 @@ private:
 	TArray<TSharedPtr<FFPObjectData>> Rows;
 
 	UFPObjectTable* ObjectTable = nullptr;
-
-	void HandleObjRenamed(UObject* Object, UObject* OldOuter, FName OldName);
 };
 
 
@@ -125,9 +124,8 @@ public:
 	virtual ~SFPObjectTableEditor() override;
 
 	static TSharedRef<SDockTab> CreateTab(const FSpawnTabArgs& Args);
-	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
-	void OnPathSet(const FString& Path);
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
 	TSharedPtr<IPropertyTable> NewPropertyTable;
 	TSharedPtr<SFPObjectTableListView> ObjectTable;
@@ -146,7 +144,7 @@ public:
 	FReply HandleDeleteClicked();
 	FReply HandleDuplicateClicked();
 
-	void HandleAssetRenamed(const FAssetData& Asset, const FString& NewName);
+	void HandleAssetRenamed(const FAssetData& Asset, const FString& OldPath);
 	void HandleAssetAdded(const FAssetData& Asset);
 	void HandleAssetRemoved(const FAssetData& Asset);
 
