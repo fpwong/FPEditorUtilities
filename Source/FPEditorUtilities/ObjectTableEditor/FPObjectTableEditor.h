@@ -18,6 +18,46 @@ public:
 	UObject* GetObj();
 };
 
+class SFPPropertyValueContainer : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SFPPropertyValueContainer)
+	{
+	}
+		SLATE_DEFAULT_SLOT(FArguments, Content)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UObject* InObj, FProperty* InProperty);
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+
+	UObject* Obj = nullptr;
+	FProperty* Prop = nullptr;
+};
+
+class SFPPropertyText : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SFPPropertyText)
+	{
+	}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UObject* Obj, FProperty* Property);
+	virtual ~SFPPropertyText() override;
+
+	void SyncPropertyText();
+
+	void HandleTextCommitted(const FText& Text, ETextCommit::Type Arg);
+
+	void HandleObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& ChangeEvent);
+	void HandleObjectTransacted(UObject* Object, const FTransactionObjectEvent& TransactionObjectEvent);
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+
+	TSharedPtr<SInlineEditableTextBlock> EditableTextBlock;
+	UObject* Obj = nullptr;
+	FProperty* Prop = nullptr;
+};
+
 class SFPObjectTableRow : public SMultiColumnTableRow<TSharedPtr<FFPObjectData>>
 {
 public:
@@ -37,6 +77,8 @@ public:
 	FText GetObjectName() const;
 
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+
+	void HandleObjPropertyChange(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent);
 
 	TSharedPtr<SInlineEditableTextBlock> InlineEditableText;
 	TSharedPtr<FFPObjectData> Reference;
@@ -150,5 +192,13 @@ public:
 
 	void RefreshTable();
 
+	void HandleClassChanged();
 	void UpdateButtons();
+
+	bool ShouldHideProperty(const TSharedRef<FPropertyNode>& Property);
 };
+
+namespace ObjectTableUtils
+{
+	static TOptional<FString> GetPropertyCategory(FProperty* Property);
+}

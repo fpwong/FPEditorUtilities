@@ -42,7 +42,10 @@ public class FPEditorUtilities : ModuleRules
 				"InputCore",
 				"EditorWidgets",
 				"ToolWidgets",
-				"AssetRegistry"
+				"AssetRegistry",
+				"SlateCore",
+				"ApplicationCore",
+				"PropertyEditor",
 			});
 	}
 }

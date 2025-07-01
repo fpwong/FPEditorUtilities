@@ -10,15 +10,16 @@
 #include "IPropertyTable.h"
 #include "ISinglePropertyView.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "ObjectTools.h"
 #include "AssetRegistry/AssetRegistryHelpers.h"
-#include "Compression/lz4.h"
 #include "Editor/PropertyEditor/Private/PropertyNode.h"
 #include "Factories/BlueprintFactory.h"
 #include "Factories/DataAssetFactory.h"
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 #include "Filters/SAssetFilterBar.h"
-#include "GeometryCollection/Facades/CollectionPositionTargetFacade.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Misc/TransactionObjectEvent.h"
+#include "Widgets/Notifications/SNotificationList.h"
 
 UObject* FFPObjectData::GetObj()
 {
@@ -35,6 +36,151 @@ UObject* FFPObjectData::GetObj()
 	return Obj;
 }
 
+void SFPPropertyValueContainer::Construct(const FArguments& InArgs, UObject* InObj, FProperty* InProperty)
+{
+	Obj = InObj;
+	Prop = InProperty;
+
+	ChildSlot
+	[
+		InArgs._Content.Widget
+	];
+}
+
+FReply SFPPropertyValueContainer::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (MouseEvent.GetModifierKeys().IsShiftDown())
+	{
+		if (MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+		{
+			// paste
+			FString PasteValue;
+			FPlatformApplicationMisc::ClipboardPaste(PasteValue);
+
+			const FScopedTransaction Transaction(INVTEXT("Paste Property (Object Table)"));
+			Obj->Modify();
+
+			Obj->PreEditChange(Prop);
+			if (FBlueprintEditorUtils::PropertyValueFromString(Prop, PasteValue, reinterpret_cast<uint8*>(Obj)))
+			{
+				FPropertyChangedEvent Event(Prop);
+				Obj->PostEditChangeProperty(Event);
+
+				FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Pasted to property %s"), *PasteValue)));
+				FSlateNotificationManager::Get().AddNotification(Notification);
+			}
+			else
+			{
+				FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Unable to paste %s"), *PasteValue)));
+				FSlateNotificationManager::Get().AddNotification(Notification);
+			}
+		}
+		else if (MouseEvent.IsMouseButtonDown(EKeys::RightMouseButton))
+		{
+			// copy
+			FString PropVal;
+			if (FBlueprintEditorUtils::PropertyValueToString(Prop, reinterpret_cast<const uint8*>(Obj), PropVal))
+			{
+				FPlatformApplicationMisc::ClipboardCopy(*PropVal);
+
+				FNotificationInfo Notification(FText::FromString(FString::Printf(TEXT("Copied to clipboard %s"), *PropVal)));
+				FSlateNotificationManager::Get().AddNotification(Notification);
+			}
+		}
+	}
+
+	return FReply::Unhandled();
+}
+
+void SFPPropertyText::Construct(const FArguments& InArgs, UObject* InObj, FProperty* InProperty)
+{
+	Obj = InObj;
+	Prop = InProperty;
+	FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(this, &SFPPropertyText::HandleObjectPropertyChanged);
+	FCoreUObjectDelegates::OnObjectTransacted.AddRaw(this, &SFPPropertyText::HandleObjectTransacted);
+
+	ChildSlot
+	[
+		SAssignNew(EditableTextBlock, SInlineEditableTextBlock).OnTextCommitted(this, &SFPPropertyText::HandleTextCommitted)
+	];
+
+	SyncPropertyText();
+}
+
+SFPPropertyText::~SFPPropertyText()
+{
+	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);	
+}
+
+void SFPPropertyText::SyncPropertyText()
+{
+	FString PropVal;
+	if (FBlueprintEditorUtils::PropertyValueToString(Prop, reinterpret_cast<const uint8*>(Obj), PropVal))
+	{
+		EditableTextBlock->SetText(FText::FromString(PropVal));
+	}
+	else
+	{
+		EditableTextBlock->SetText(INVTEXT(""));
+	}
+}
+
+void SFPPropertyText::HandleTextCommitted(const FText& Text, ETextCommit::Type Arg)
+{
+	if (Arg == ETextCommit::Type::OnEnter)
+	{
+		const FString TransactionMsg = FString::Printf(TEXT("Edit %s"), *Prop->GetName());
+		const FScopedTransaction Transaction(FText::FromString(TransactionMsg));
+
+		Obj->Modify();
+
+		Obj->PreEditChange(Prop);
+
+		if (FBlueprintEditorUtils::PropertyValueFromString(Prop, Text.ToString(), reinterpret_cast<uint8*>(Obj)))
+		{
+			FPropertyChangedEvent Event(Prop);
+			Obj->PostEditChangeProperty(Event);
+		}
+	}
+}
+
+void SFPPropertyText::HandleObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& ChangeEvent)
+{
+	if (Obj == Object && ChangeEvent.Property == Prop)
+	{
+		SyncPropertyText();
+	}
+}
+
+void SFPPropertyText::HandleObjectTransacted(UObject* Object, const FTransactionObjectEvent& TransactionObjectEvent)
+{
+	if (Obj == Object && TransactionObjectEvent.GetChangedProperties().Contains(Prop->GetName()))
+	{
+		SyncPropertyText();
+	}
+}
+
+FReply SFPPropertyText::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (EditableTextBlock->IsHovered())
+	{
+		EditableTextBlock->EnterEditingMode();
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
+}
+
+void SFPObjectTableRow::HandleObjPropertyChange(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (Object != Reference->GetObj())
+	{
+		return;
+	}
+
+	PropertyChangedEvent.Property->GetName();
+}
+
 void SFPObjectTableRow::Construct(const FArguments& InArgs, TSharedPtr<FFPObjectData> InReference, const TSharedRef<STableViewBase>& OwnerTable)
 {
 	Reference = InReference;
@@ -43,7 +189,7 @@ void SFPObjectTableRow::Construct(const FArguments& InArgs, TSharedPtr<FFPObject
 
 TSharedRef<SWidget> SFPObjectTableRow::GenerateWidgetForColumn(const FName& ColumnName)
 {
-	TSharedRef<SWidget> ColumnWidget = SNullWidget::NullWidget;
+	TSharedPtr<SWidget> ColumnWidget = SNullWidget::NullWidget;
 
 	FSinglePropertyParams Params;
 	Params.NamePlacement = EPropertyNamePlacement::Type::Hidden;
@@ -51,33 +197,78 @@ TSharedRef<SWidget> SFPObjectTableRow::GenerateWidgetForColumn(const FName& Colu
 
 	TSharedRef<SHorizontalBox> HBox = SNew(SHorizontalBox);
 
-	if (Reference->GetObj())
+	if (ColumnName == TEXT("___FPRowName"))
 	{
-		UObject* Obj = Reference->GetObj();
-		if (ColumnName == TEXT("___FPRowName"))
+		ColumnWidget = SAssignNew(InlineEditableText, SInlineEditableTextBlock)
+			.IsReadOnly(false)
+			.Text(this, &SFPObjectTableRow::GetObjectName)
+			.OnTextCommitted(this, &SFPObjectTableRow::HandleRename);
+	}
+	else
+	{
+		if (UObject* Obj = Reference->GetObj())
 		{
-			ColumnWidget = SAssignNew(InlineEditableText, SInlineEditableTextBlock)
-				.IsReadOnly(false)
-				.Text(this, &SFPObjectTableRow::GetObjectName)
-				.OnTextCommitted(this, &SFPObjectTableRow::HandleRename);
-		}
+			if (FProperty* Property = FindFProperty<FProperty>(Obj->GetClass(), ColumnName))
+			{
+				bool bDoesPropertyHaveSupportedClass =
+					!Property->IsA(FMapProperty::StaticClass()) &&
+					!Property->IsA(FArrayProperty::StaticClass()) &&
+					!Property->IsA(FSetProperty::StaticClass());
 
-		if (auto PropWidget = EditModule.CreateSingleProperty(Obj, ColumnName, Params))
-		{
-			ColumnWidget = PropWidget.ToSharedRef();
+				const FStructProperty* StructProp = CastField<const FStructProperty>(Property);
+				if (StructProp && StructProp->Struct)
+				{
+					FName StructName = StructProp->Struct->GetFName();
+					bDoesPropertyHaveSupportedClass = StructName == NAME_Rotator || 
+								 StructName == NAME_Color ||  
+								 StructName == NAME_LinearColor || 
+								 StructName == NAME_Vector ||
+								 StructName == NAME_Quat ||
+								 StructName == NAME_Vector4 ||
+								 StructName == NAME_Vector2D ||
+								 StructName == NAME_IntPoint;
+
+					FPropertyEditorModule& PropertyEditorModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+					if (PropertyEditorModule.IsCustomizedStruct(StructProp->Struct, FCustomPropertyTypeLayoutMap()))
+					{
+						bDoesPropertyHaveSupportedClass = true;
+					}
+				}
+
+				if (bDoesPropertyHaveSupportedClass)
+				{
+					if (TSharedPtr<class ISinglePropertyView> PropWidget = EditModule.CreateSingleProperty(Obj, ColumnName, Params))
+					{
+						if (PropWidget->HasValidProperty())
+						{
+							ColumnWidget = SNew(SFPPropertyValueContainer, Obj, Property)
+							[
+								PropWidget.ToSharedRef()
+							];
+						}
+					}
+				}
+
+				if (ColumnWidget == SNullWidget::NullWidget)
+				{
+					ColumnWidget = SNew(SFPPropertyValueContainer, Obj, Property)
+					[
+						SNew(SFPPropertyText, Obj, Property)
+					];
+				}
+			}
 		}
 	}
 
-	return SNew(SBox).Padding(2.0f)
+	return SNew(SBox).Padding(12.0f, 2.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0)
-			.HAlign(HAlign_Center)
-			.VAlign(VAlign_Center)
-			.AutoWidth()
+			.HAlign(HAlign_Fill)
+			.VAlign(VAlign_Fill)
 			[
-				ColumnWidget
+				ColumnWidget.ToSharedRef()
 			]
 		];
 }
@@ -87,13 +278,12 @@ void SFPObjectTableRow::HandleRename(const FText& Text, ETextCommit::Type Commit
 	if (CommitMethod == ETextCommit::Type::OnEnter)
 	{
 		auto Pkg = Reference->AssetData.GetAsset();
-		
+
 		if (Pkg)
 		{
 			FString NewName = Text.ToString();
 			FString Path = FPaths::GetPath(Pkg->GetPathName());
-
-			UE_LOG(LogTemp, Warning, TEXT("Rename %s to %s"), *Path, *NewName);
+			// UE_LOG(LogTemp, Warning, TEXT("Rename %s to %s"), *Path, *NewName);
 
 			FAssetRenameData RenameData(Pkg, Path, NewName);
 			IAssetTools::Get().RenameAssets({RenameData});
@@ -111,15 +301,17 @@ FReply SFPObjectTableRow::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry
 	if (InlineEditableText->IsHovered())
 	{
 		InlineEditableText->EnterEditingMode();
+		return FReply::Handled();
 	}
-	return FReply::Handled();
+
+	return FReply::Unhandled();
 }
 
 void SFPObjectTableListView::Construct(const FArguments& InArgs, UFPObjectTable* InTableSettings)
 {
 	ObjectTable = InTableSettings;
 
-	SAssignNew(HeaderRowWidget, SHeaderRow);
+	SAssignNew(HeaderRowWidget, SHeaderRow).ResizeMode(ESplitterResizeMode::Fill);
 
 	SListView::Construct
 	(
@@ -142,7 +334,7 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	HeaderRowWidget->AddColumn(
 		SHeaderRow::Column(FName(TEXT("___FPRowName")))
 		.DefaultLabel(INVTEXT("Object Name"))
-		.FillWidth(100.f));
+		.ManualWidth(300.f));
 
 
 	for (TFieldIterator<FProperty> PropertyIt(TableSettings->ClassFilter, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
@@ -152,11 +344,15 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 			continue;
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("Made column %s"), *PropertyIt->GetName());
+		PropertyIt->HasAnyPropertyFlags(CPF_AdvancedDisplay);
+
+		// How to save / load the column widths?
 		SHeaderRow::FColumn::FArguments ColumnArgs;
 		ColumnArgs.ColumnId(PropertyIt->GetFName());
 		ColumnArgs.DefaultLabel(FText::FromString(PropertyIt->GetName()));
-		ColumnArgs.FillWidth(100.f);
+		ColumnArgs.ManualWidth(200.0f);
+		ColumnArgs.OverflowPolicy(ETextOverflowPolicy::MultilineEllipsis);
+		ColumnArgs.HeaderContentPadding(FMargin(8.f, 2.f));
 		HeaderRowWidget->AddColumn(ColumnArgs);
 	}
 
@@ -186,12 +382,6 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	else
 	{
 		AssetRegistryModule.Get().GetAssets(Filter, AssetDataList);
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("Searched %s %s"), *RelativePath, *TableSettings->RootDirectory.Path);
-	if (AssetDataList.Num() == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Found no matching assets empty!"));
 	}
 
 	for (FAssetData DataList : AssetDataList)
@@ -233,7 +423,7 @@ void SFPObjectTableListView::AddAsset(const FAssetData& AssetData)
 		return A->AssetData.AssetName.ToString() < B->AssetData.AssetName.ToString();
 	});
 
-	UE_LOG(LogTemp, Warning, TEXT("Added %s"), *AssetData.AssetName.ToString());
+	// UE_LOG(LogTemp, Warning, TEXT("Added %s"), *AssetData.AssetName.ToString());
 	RequestListRefresh();
 }
 
@@ -243,7 +433,7 @@ void SFPObjectTableListView::RemoveAsset(const FAssetData& AssetData)
 	{
 		if (Rows[i]->AssetData == AssetData)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Removed %s"), *AssetData.AssetName.ToString());
+			// UE_LOG(LogTemp, Warning, TEXT("Removed %s"), *AssetData.AssetName.ToString());
 			Rows.RemoveAt(i);
 			return;
 		}
@@ -254,7 +444,7 @@ void SFPObjectTableListView::RemoveAsset(const FAssetData& AssetData)
 
 void SFPObjectTableListView::RenameAsset(const FAssetData& Asset, const FString& OldPath)
 {
-	UE_LOG(LogTemp, Warning, TEXT("Renamed %s PREV %s"), *Asset.AssetName.ToString(), *OldPath);
+	// UE_LOG(LogTemp, Warning, TEXT("Renamed %s PREV %s"), *Asset.AssetName.ToString(), *OldPath);
 	for (int i = Rows.Num() - 1; i >= 0; --i)
 	{
 		if (Rows[i]->AssetData.GetSoftObjectPath().ToString() == OldPath)
@@ -416,7 +606,7 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 	TableSettings = InArgs._Settings;
 
 	TableSettings->OnChange.AddRaw(this, &SFPObjectTableEditor::RefreshTable);
-	TableSettings->OnClassChanged.AddRaw(this, &SFPObjectTableEditor::UpdateButtons);
+	TableSettings->OnClassChanged.AddRaw(this, &SFPObjectTableEditor::HandleClassChanged);
 
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	AssetRegistryModule.Get().OnAssetRemoved().AddRaw(this, &SFPObjectTableEditor::HandleAssetRemoved);
@@ -433,40 +623,11 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 	FDetailsViewArgs ViewArgs;
 	ViewArgs.bAllowSearch = true;
 	ViewArgs.bHideSelectionTip = false;
-	ViewArgs.NameAreaSettings = FDetailsViewArgs::HideNameArea;
+	ViewArgs.NameAreaSettings = FDetailsViewArgs::ObjectsUseNameArea;
 	ViewArgs.bShowSectionSelector = false;
 	ViewArgs.ViewIdentifier = "FPObjectTable";
-
-	ViewArgs.ShouldForceHideProperty = FDetailsViewArgs::FShouldForceHideProperty::CreateLambda([&](const TSharedRef<FPropertyNode>& Property)
-	{
-		if (!Property->GetProperty())
-		{
-			return false;
-		}
-
-		if (const FString* CategoryNamesMetaData = Property->GetProperty()->FindMetaData("Category"))
-		{
-			TArray<FString> CategoryNames;
-			CategoryNamesMetaData->ParseIntoArray(CategoryNames, TEXT(","), true);
-
-			bool bFound = false;
-			for (int i = 0; i < CategoryNames.Num(); i++)
-			{
-				if (!TableSettings->DetailsViewSections.Contains(*CategoryNames[i]))
-				{
-					bFound = true;
-					break;
-				}
-			}
-
-			if (!bFound)
-			{
-				return false;
-			}
-		}
-
-		return true;
-	});
+	ViewArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Show;
+	ViewArgs.ShouldForceHideProperty = FDetailsViewArgs::FShouldForceHideProperty::CreateRaw(this, &SFPObjectTableEditor::ShouldHideProperty);
 
 	DetailsView = PropertyEditorModule.CreateDetailView(ViewArgs);
 
@@ -474,37 +635,10 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 	ObjectTable->MyOnSelectionChanged().BindRaw(this, &SFPObjectTableEditor::OnSelectionChanged);
 	ObjectTable->Refresh(TableSettings);
 
-	TSet<FString> ClassProperties;
-	TSet<FString> AllProperties;
+	SAssignNew(DetailViewButtons, SFPToggleButtons).OnPropertiesChanged(this, &SFPObjectTableEditor::OnDetailsViewSectionsChanged);
+	SAssignNew(PropertyButtons, SFPToggleButtons).OnPropertiesChanged(this, &SFPObjectTableEditor::OnTableColumnsChanged);
 
-	if (TableSettings->ClassFilter)
-	{
-		for (TFieldIterator<FProperty> It(TableSettings->ClassFilter.Get()); It; ++It)
-		{
-			FProperty* Property = *It;
-
-			AllProperties.Add(Property->GetName());
-
-			if (const FString* CategoryNamesMetaData = Property->FindMetaData("Category"))
-			{
-				TArray<FString> CategoryNames;
-				CategoryNamesMetaData->ParseIntoArray(CategoryNames, TEXT(","), true);
-				for (int i = 0; i < CategoryNames.Num(); i++)
-				{
-					ClassProperties.Add(CategoryNames[i]);
-				}
-			}
-		}
-	}
-
-	SAssignNew(DetailViewButtons, SFPToggleButtons)
-	.Properties(ClassProperties.Array())
-	.CheckedProperties(TableSettings->DetailsViewSections)
-	.OnPropertiesChanged(this, &SFPObjectTableEditor::OnDetailsViewSectionsChanged);
-
-	SAssignNew(PropertyButtons, SFPToggleButtons)
-	.Properties(AllProperties.Array())
-	.OnPropertiesChanged(this, &SFPObjectTableEditor::OnTableColumnsChanged);
+	UpdateButtons();
 
 	ChildSlot
 	[
@@ -531,47 +665,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 				[
 					SNew(SButton)
 					.OnClicked(this, &SFPObjectTableEditor::HandleNewClassClicked)
-					// .OnClicked_Lambda([this]() {
-					// 	UE_LOG(LogTemp, Warning, TEXT("Chosen class %s"), *TableSettings->ClassFilter->GetName());
-					//
-					// 	// static FName AssetToolsModuleName = FName("AssetTools");
-					// 	FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>(FName("AssetTools"));
-					//
-					// 	TArray<UFactory*> Factories = AssetToolsModule.Get().GetNewAssetFactories();
-					// 	UFactory* FoundFactory = nullptr;
-					// 	for (UFactory* Factory : Factories)
-					// 	{
-					// 		if (Factory->DoesSupportClass(TableSettings->ClassFilter))
-					// 		{
-					// 			FoundFactory = Factory;
-					// 			break;
-					// 		}
-					// 	}
-					//
-					// 	if (TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass()))
-					// 	{
-					// 		FoundFactory = NewObject<UDataAssetFactory>();
-					// 	}
-					//
-					// 	if (FoundFactory)
-					// 	{
-					// 		FString DefaultName = TableSettings->ClassFilter->GetName();
-					// 		DefaultName.RemoveFromEnd(TEXT("_C"));
-					//
-					// 		if (!TableSettings->NameTemplate.IsEmpty())
-					// 		{
-					// 			DefaultName = TableSettings->NameTemplate; 
-					// 		}
-					//
-					// 		FString PackageName;
-					// 		FString UniqueName;
-					// 		AssetToolsModule.Get().CreateUniqueAssetName(TableSettings->RootDirectory.Path / DefaultName, "", PackageName, UniqueName);
-					// 		UE_LOG(LogTemp, Warning, TEXT("Checking %s"), *(TableSettings->RootDirectory.Path / TableSettings->GetClass()->GetName()));
-					// 		UObject* CreatedAsset = AssetToolsModule.Get().CreateAsset(UniqueName, TableSettings->RootDirectory.Path, TableSettings->ClassFilter, FoundFactory);
-					// 		RefreshTable();
-					// 	}
-					// 	return FReply::Handled();
-					// })
 					[
 						SNew(STextBlock).Text(INVTEXT("Create New"))
 					]
@@ -580,16 +673,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 				[
 					SNew(SButton)
 					.OnClicked(this, &SFPObjectTableEditor::HandleDeleteClicked)
-					// .OnClicked_Lambda([this]() {
-					// 	if (ObjectTable.IsValid())
-					// 	{
-					// 		if (ObjectTools::DeleteObjects(ObjectTable->GetSelectedObjects()))
-					// 		{
-					// 			RefreshTable();
-					// 		}
-					// 	}
-					// 	return FReply::Handled();
-					// })
 					[
 						SNew(STextBlock).Text(INVTEXT("Delete"))
 					]
@@ -597,10 +680,6 @@ void SFPObjectTableEditor::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SButton).OnClicked(this, &SFPObjectTableEditor::HandleDuplicateClicked)
-					// .OnClicked_Lambda([this]() {
-					// 	UE_LOG(LogTemp, Warning, TEXT("TODO"));
-					// 	return FReply::Handled();
-					// })
 					[
 						SNew(STextBlock).Text(INVTEXT("Duplicate"))
 					]
@@ -641,6 +720,7 @@ SFPObjectTableEditor::~SFPObjectTableEditor()
 	if (TableSettings)
 	{
 		TableSettings->OnChange.RemoveAll(this);
+		TableSettings->OnClassChanged.RemoveAll(this);
 	}
 
 	FCoreUObjectDelegates::OnObjectRenamed.RemoveAll(this);
@@ -664,15 +744,12 @@ void SFPObjectTableEditor::OnSelectionChanged(TSharedPtr<FFPObjectData> ObjectDa
 
 FReply SFPObjectTableEditor::HandleNewClassClicked()
 {
-	UE_LOG(LogTemp, Warning, TEXT("Create new class %s"), *TableSettings->ClassFilter->GetName());
-
-	// static FName AssetToolsModuleName = FName("AssetTools");
+	// UE_LOG(LogTemp, Warning, TEXT("Create new class %s"), *TableSettings->ClassFilter->GetName());
 	FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>(FName("AssetTools"));
 
 	TArray<UFactory*> Factories = AssetToolsModule.Get().GetNewAssetFactories();
 	UFactory* FoundFactory = nullptr;
 
-	UClass* ClassToUse = TableSettings->ClassFilter;
 
 	if (TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass()))
 	{
@@ -686,7 +763,6 @@ FReply SFPObjectTableEditor::HandleNewClassClicked()
 		Factory->ParentClass = BP->GeneratedClass;
 
 		FoundFactory = Factory;
-		ClassToUse = Factory->ParentClass;
 	}
 
 	if (!FoundFactory)
@@ -715,18 +791,12 @@ FReply SFPObjectTableEditor::HandleNewClassClicked()
 		FString PackageName;
 		FString UniqueName;
 		AssetToolsModule.Get().CreateUniqueAssetName(TableSettings->RootDirectory.Path / DefaultName, "", PackageName, UniqueName);
-		UE_LOG(LogTemp, Warning, TEXT("Checking %s"), *(TableSettings->RootDirectory.Path / TableSettings->GetClass()->GetName()));
 		CreatedAsset = AssetToolsModule.Get().CreateAsset(UniqueName, TableSettings->RootDirectory.Path, FoundFactory->SupportedClass, FoundFactory);
-		// RefreshTable();
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Failed to find a valid factory"))
 	}
 
 	if (!CreatedAsset)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to create asset"))
+		FSlateNotificationManager::Get().AddNotification(INVTEXT("Failed to create asset"));
 	}
 
 	return FReply::Handled();
@@ -829,6 +899,28 @@ void SFPObjectTableEditor::HandleAssetRemoved(const FAssetData& Asset)
 void SFPObjectTableEditor::RefreshTable()
 {
 	ObjectTable->Refresh(TableSettings);
+	UpdateButtons();
+}
+
+void SFPObjectTableEditor::HandleClassChanged()
+{
+	// clear the table properties
+	TableSettings->CheckedProperties.Empty();
+
+	// enable all details view section
+	TSet<FString> PropCategories;
+	for (TFieldIterator<FProperty> It(TableSettings->ClassFilter.Get()); It; ++It)
+	{
+		FProperty* Property = *It;
+		if (auto CategoryName = ObjectTableUtils::GetPropertyCategory(Property))
+		{
+			PropCategories.Add(*CategoryName);
+		}
+	}
+
+	TableSettings->DetailsViewSections = PropCategories.Array();
+
+	UpdateButtons();
 }
 
 void SFPObjectTableEditor::UpdateButtons()
@@ -838,41 +930,79 @@ void SFPObjectTableEditor::UpdateButtons()
 		return;
 	}
 
-	TSet<FString> Categories;
-	TSet<FString> Properties;
+	TSet<FString> PropNames;
+	TSet<FString> PropCategories;
 
 	for (TFieldIterator<FProperty> It(TableSettings->ClassFilter.Get()); It; ++It)
 	{
 		FProperty* Property = *It;
-		// UE_LOG(LogTemp, Warning, TEXT("TEST %s"), *Property->GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("%s | %s "), *Property->GetName(), *Property->GetClass()->GetName())
 
-		Properties.Add(Property->GetName());
-
-		if (const FString* CategoryNamesMetaData = Property->FindMetaData("Category"))
+		// see SObjectMixerEditorList::AddUniquePropertyColumnInfo
+		const bool bIsPropertyBlueprintEditable = (Property->GetPropertyFlags() & CPF_Edit) != 0;
+		if (bIsPropertyBlueprintEditable)
 		{
-			TArray<FString> CategoryNames;
-			CategoryNamesMetaData->ParseIntoArray(CategoryNames, TEXT(","), true);
-			for (int i = 0; i < CategoryNames.Num(); i++)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("\tCATEGORY %s"), *CategoryNames[i]);
-				Categories.Add(CategoryNames[i]);
-			}
+			PropNames.Add(Property->GetName());
+			// UE_LOG(LogTemp, Warning, TEXT("Property %s | %s"), *Property->GetName(), *Property->GetClass()->GetName());
+		}
+
+		if (auto CategoryName = ObjectTableUtils::GetPropertyCategory(Property))
+		{
+			PropCategories.Add(*CategoryName);
 		}
 	}
 
-	TableSettings->CheckedProperties.Empty();
-	TableSettings->CheckedCategories = Categories.Array();
-
 	if (DetailViewButtons)
 	{
-		DetailViewButtons->SetProperties(Categories.Array());
-		DetailViewButtons->CheckedProperties = Categories.Array();
+		DetailViewButtons->SetProperties(PropCategories.Array());
+		DetailViewButtons->CheckedProperties = TableSettings->DetailsViewSections;
 	}
 
 	if (PropertyButtons)
 	{
-		PropertyButtons->SetProperties(Properties.Array());
+		PropertyButtons->SetProperties(PropNames.Array());
+		PropertyButtons->CheckedProperties = TableSettings->CheckedProperties;
 	}
+}
+
+bool SFPObjectTableEditor::ShouldHideProperty(const TSharedRef<FPropertyNode>& Property)
+{
+	// if (!TableSettings->DetailsViewSections.Num())
+	// {
+	// 	return false;
+	// }
+
+	if (!Property->GetProperty())
+	{
+		return false;
+	}
+
+	if (Property->GetParentNode() && !Property->GetParentNode()->AsCategoryNode())
+	{
+		return false;
+	}
+
+	if (auto Category = ObjectTableUtils::GetPropertyCategory(Property->GetProperty()))
+	{
+		return !TableSettings->DetailsViewSections.Contains(*Category);
+	}
+
+	return true;
+}
+
+TOptional<FString> ObjectTableUtils::GetPropertyCategory(FProperty* Property)
+{
+	if (const FString* CategoryNamesMetaData = Property->FindMetaData("Category"))
+	{
+		TArray<FString> CategoryNames;
+		CategoryNamesMetaData->ParseIntoArray(CategoryNames, TEXT(","), true);
+		if (CategoryNames.Num())
+		{
+			return CategoryNames[0];
+		}
+	}
+
+	return TOptional<FString>();
 }
 
 FReply SFPObjectTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
@@ -890,7 +1020,7 @@ FReply SFPObjectTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEv
 				return FReply::Handled();
 			}
 
-			// TODO for some reason the asset doesn't get selected when doing this, maybe move this to a mouse hotkey?
+			// TODO sometimes the asset doesn't get selected when doing this, maybe move this to a mouse hotkey?
 			if (InKeyEvent.GetKey() == EKeys::B && FSlateApplication::Get().GetModifierKeys().IsControlDown())
 			{
 				// Highlight the asset in content browser
@@ -900,6 +1030,11 @@ FReply SFPObjectTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEv
 				return FReply::Handled();
 			}
 		}
+	}
+
+	if (InKeyEvent.GetKey() == EKeys::Delete)
+	{
+		AssetViewUtils::DeleteAssets(ObjectTable->GetSelectedObjects());
 	}
 
 	return FReply::Unhandled();
