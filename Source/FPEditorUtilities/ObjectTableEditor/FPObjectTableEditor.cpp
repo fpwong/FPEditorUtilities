@@ -109,7 +109,8 @@ void SFPPropertyText::Construct(const FArguments& InArgs, UObject* InObj, FPrope
 
 SFPPropertyText::~SFPPropertyText()
 {
-	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);	
+	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);
+	FCoreUObjectDelegates::OnObjectTransacted.AddRaw(this, &SFPPropertyText::HandleObjectTransacted);
 }
 
 void SFPPropertyText::SyncPropertyText()
@@ -371,18 +372,19 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	Filter.ClassPaths.Add(TableSettings->ClassFilter->GetClassPathName());
 	Filter.bRecursiveClasses = true;
 
-	bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
-	bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
-
 	TArray<FAssetData> AssetDataList;
-	if (bIsBlueprint && !bIsDataAsset)
-	{
-		UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
-	}
-	else
-	{
-		AssetRegistryModule.Get().GetAssets(Filter, AssetDataList);
-	}
+	UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
+
+	// bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
+	// bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
+	// if (bIsBlueprint && !bIsDataAsset)
+	// {
+	// 	UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
+	// }
+	// else
+	// {
+	// 	AssetRegistryModule.Get().GetAssets(Filter, AssetDataList);
+	// }
 
 	for (FAssetData DataList : AssetDataList)
 	{
@@ -843,9 +845,9 @@ void SFPObjectTableEditor::HandleAssetAdded(const FAssetData& Asset)
 
 	bool bShouldAdd = false;
 
-	bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
-	bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
-	if (bIsBlueprint && !bIsDataAsset)
+	// bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
+	// bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
+	// if (bIsBlueprint && !bIsDataAsset)
 	{
 		// Expand list of classes to include derived classes
 		TArray<FTopLevelAssetPath> BlueprintParentClassPathRoots = MoveTemp(Filter.ClassPaths);
@@ -853,10 +855,9 @@ void SFPObjectTableEditor::HandleAssetAdded(const FAssetData& Asset)
 		if (Filter.bRecursiveClasses)
 		{
 			AssetRegistry.GetDerivedClassNames(
-				BlueprintParentClassPathRoots, 
+				BlueprintParentClassPathRoots,
 				TSet<FTopLevelAssetPath>(),
-				 BlueprintParentClassPaths
-				 );
+				BlueprintParentClassPaths);
 		}
 		else
 		{
@@ -874,16 +875,16 @@ void SFPObjectTableEditor::HandleAssetAdded(const FAssetData& Asset)
 			bShouldAdd = true;
 		}
 	}
-	else
-	{
-		FARCompiledFilter CompiledFilter;
-		AssetRegistry.CompileFilter(Filter, CompiledFilter);
-
-		if (AssetRegistry.IsAssetIncludedByFilter(Asset, CompiledFilter))
-		{
-			bShouldAdd = true;
-		}
-	}
+	// else
+	// {
+	// 	FARCompiledFilter CompiledFilter;
+	// 	AssetRegistry.CompileFilter(Filter, CompiledFilter);
+	//
+	// 	if (AssetRegistry.IsAssetIncludedByFilter(Asset, CompiledFilter))
+	// 	{
+	// 		bShouldAdd = true;
+	// 	}
+	// }
 
 	if (bShouldAdd)
 	{
