@@ -249,6 +249,10 @@ TSharedRef<SWidget> SFPObjectTableRow::GenerateWidgetForColumn(const FName& Colu
 						}
 					}
 				}
+				else if (Property->ContainsInstancedObjectProperty())
+				{
+					ColumnWidget = SNew(STextBlock).Text(INVTEXT("Instanced Property")).ColorAndOpacity(FLinearColor::Red);
+				}
 
 				if (ColumnWidget == SNullWidget::NullWidget)
 				{
@@ -372,19 +376,23 @@ void SFPObjectTableListView::Refresh(UFPObjectTable* TableSettings)
 	Filter.ClassPaths.Add(TableSettings->ClassFilter->GetClassPathName());
 	Filter.bRecursiveClasses = true;
 
-	TArray<FAssetData> AssetDataList;
-	UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
+	bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
+	bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
 
-	// bool bIsBlueprint = UBlueprint::GetBlueprintFromClass(TableSettings->ClassFilter) != nullptr;
-	// bool bIsDataAsset = TableSettings->ClassFilter->IsChildOf(UDataAsset::StaticClass());
-	// if (bIsBlueprint && !bIsDataAsset)
-	// {
-	// 	UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
-	// }
-	// else
-	// {
-	// 	AssetRegistryModule.Get().GetAssets(Filter, AssetDataList);
-	// }
+	// UE_LOG(LogTemp, Warning, TEXT("%s BP %d DA %d "), *GetNameSafe(TableSettings->ClassFilter), bIsBlueprint, bIsDataAsset);
+
+	// TODO figure out how to disable children which are BP and DA, cause these are likely not what you want to view in the table
+	// E.g. UColorAsset -> B_ColorAsset -> DA_AssetBlue (if we want to view all UColorAsset, we don't want to see B_ColorAsset)
+
+	TArray<FAssetData> AssetDataList;
+	if (bIsBlueprint && !bIsDataAsset)
+	{
+		UAssetRegistryHelpers::GetBlueprintAssets(Filter, AssetDataList);
+	}
+	else
+	{
+		AssetRegistryModule.Get().GetAssets(Filter, AssetDataList);
+	}
 
 	for (FAssetData DataList : AssetDataList)
 	{
@@ -940,7 +948,7 @@ void SFPObjectTableEditor::UpdateButtons()
 		// UE_LOG(LogTemp, Warning, TEXT("%s | %s "), *Property->GetName(), *Property->GetClass()->GetName())
 
 		// see SObjectMixerEditorList::AddUniquePropertyColumnInfo
-		const bool bIsPropertyBlueprintEditable = (Property->GetPropertyFlags() & CPF_Edit) != 0;
+		const bool bIsPropertyBlueprintEditable = (Property->GetPropertyFlags() & CPF_Edit) != 0 && Property->HasAllFlags(RF_Public);
 		if (bIsPropertyBlueprintEditable)
 		{
 			PropNames.Add(Property->GetName());
